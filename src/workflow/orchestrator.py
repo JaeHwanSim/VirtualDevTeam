@@ -35,24 +35,41 @@ class WorkflowOrchestrator:
         Returns:
             성공 여부
         """
+        from utils.logger import workflow_logger, setup_detailed_logger
+        
+        # Issue별 상세 로거
+        issue_logger = setup_detailed_logger("workflow", issue.number)
+        
         try:
+            issue_logger.info("=" * 60)
+            issue_logger.info(f"🚀 워크플로우 시작")
+            issue_logger.info(f"Issue #{issue.number}: {issue.title}")
+            issue_logger.info(f"작성자: {issue.author}")
+            issue_logger.info("=" * 60)
+            
             # 워크플로우 상태 초기화
+            issue_logger.debug("워크플로우 상태 초기화...")
             state = WorkflowState(
                 issue_number=issue.number,
                 current_stage=WorkflowStage.SPEC
             )
             self.workflow_states[issue.number] = state
+            issue_logger.info(f"현재 단계: {state.current_stage.value}")
             
             # Spec 생성
+            issue_logger.info("\n📄 Step 1/4: Spec 생성")
             spec_path, review_result = self.stage_executor.create_spec(issue)
             
             if not spec_path or not review_result:
                 state.reject("Spec 생성 실패")
+                issue_logger.error("❌ Spec 생성 실패 - 워크플로우 중단")
                 return False
             
             state.spec_path = str(spec_path)
+            issue_logger.info(f"✅ Spec 생성 완료: {spec_path}")
             
             # Slack 알림 전송
+            issue_logger.debug("Slack 알림 전송 중...")
             message = self._create_approval_message(
                 stage="Spec",
                 issue=issue,
@@ -61,21 +78,23 @@ class WorkflowOrchestrator:
             )
             
             self.slack_bot.send_message(channel, message)
+            issue_logger.info(f"📱 Slack 알림 전송: {channel}")
             
             # 자동 승인 모드인 경우 다음 단계로
             if review_result.approved:
-                print(f"✅ Spec 리뷰 통과 (#{issue.number})")
+                issue_logger.info(f"✅ Spec 리뷰 통과 (점수: {review_result.score:.2f})")
                 # 자동으로 Plan 생성 진행
-                print(f"🔄 Plan 단계 자동 시작 (#{issue.number})")
+                issue_logger.info("🔄 자동으로 다음 단계 진행...")
                 self.approve_and_continue(issue.number, channel)
             else:
-                print(f"❌ Spec 리뷰 실패 (#{issue.number})")
+                issue_logger.warning(f"❌ Spec 리뷰 실패 (점수: {review_result.score:.2f})")
                 state.reject(review_result.comments)
+                issue_logger.info("⏸️  사용자 승인 대기")
             
             return True
             
         except Exception as e:
-            print(f"워크플로우 시작 오류: {e}")
+            issue_logger.error(f"❌ 워크플로우 오류: {e}", exc_info=True)
             return False
     
     def approve_and_continue(self, issue_number: int, channel: str = "#dev-team") -> bool:

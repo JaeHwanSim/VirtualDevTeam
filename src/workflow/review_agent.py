@@ -42,7 +42,13 @@ class ReviewAgent:
         Returns:
             ReviewResult
         """
+        from utils.logger import review_logger
+        
+        review_logger.info(f"📋 Spec 리뷰 시작: '{issue_title}'")
+        review_logger.debug(f"  Spec 길이: {len(content)} 글자")
+        
         if self.auto_approve:
+            review_logger.info("  ⚡ 자동 승인 모드 활성화")
             return ReviewResult(
                 approved=True,
                 comments="자동 승인 모드",
@@ -50,6 +56,8 @@ class ReviewAgent:
             )
         
         # 간단한 검증
+        review_logger.debug("  검증 항목 체크 시작...")
+        
         checks = {
             'has_user_stories': '## User Scenarios' in content or 'User Story' in content,
             'has_requirements': 'Requirements' in content or 'Functional Requirements' in content,
@@ -57,10 +65,43 @@ class ReviewAgent:
             'min_length': len(content) > 500
         }
         
+        # 각 항목 체크 로깅
+        review_logger.debug("  [체크 1/4] User Stories 존재 여부...")
+        if checks['has_user_stories']:
+            review_logger.debug("    ✓ User Stories 발견")
+        else:
+            review_logger.warning("    ✗ User Stories 없음")
+        
+        review_logger.debug("  [체크 2/4] Requirements 존재 여부...")
+        if checks['has_requirements']:
+            review_logger.debug("    ✓ Requirements 발견")
+        else:
+            review_logger.warning("    ✗ Requirements 없음")
+        
+        review_logger.debug("  [체크 3/4] Success Criteria 존재 여부...")
+        if checks['has_success_criteria']:
+            review_logger.debug("    ✓ Success Criteria 발견")
+        else:
+            review_logger.warning("    ✗ Success Criteria 없음")
+        
+        review_logger.debug("  [체크 4/4] 최소 길이 (500자) 확인...")
+        if checks['min_length']:
+            review_logger.debug(f"    ✓ 충분한 길이 ({len(content)}자)")
+        else:
+            review_logger.warning(f"    ✗ 너무 짧음 ({len(content)}자)")
+        
         score = sum(checks.values()) / len(checks)
         approved = score >= 0.75
         
+        review_logger.info(f"  총점: {score:.2f}/1.0 (기준: 0.75)")
+        
+        if approved:
+            review_logger.info(f"✅ Spec 리뷰 통과 (점수: {score:.2f})")
+        else:
+            review_logger.warning(f"❌ Spec 리뷰 실패 (점수: {score:.2f})")
+        
         comments = self._generate_comments(checks, "Spec")
+        review_logger.debug(f"생성된 피드백:\n{comments}")
         
         return ReviewResult(
             approved=approved,
@@ -79,7 +120,13 @@ class ReviewAgent:
         Returns:
             ReviewResult
         """
+        from utils.logger import review_logger
+        
+        review_logger.info("📋 Plan 리뷰 시작")
+        review_logger.debug(f"  Plan 길이: {len(content)} 글자")
+        
         if self.auto_approve:
+            review_logger.info("  ⚡ 자동 승인 모드")
             return ReviewResult(
                 approved=True,
                 comments="자동 승인 모드",
@@ -87,6 +134,7 @@ class ReviewAgent:
             )
         
         # 간단한 검증
+        review_logger.debug("  검증 항목 체크...")
         checks = {
             'has_technical_context': 'Technical Context' in content or '기술 스택' in content,
             'has_implementation_phases': 'Phase' in content or 'Implementation' in content,
@@ -95,8 +143,21 @@ class ReviewAgent:
             'min_length': len(content) > 800
         }
         
+        for i, (key, value) in enumerate(checks.items(), 1):
+            review_logger.debug(f"  [체크 {i}/5] {key}...")
+            if value:
+                review_logger.debug(f"    ✓ 통과")
+            else:
+                review_logger.warning(f"    ✗ 실패")
+        
         score = sum(checks.values()) / len(checks)
         approved = score >= 0.75
+        
+        review_logger.info(f"  총점: {score:.2f}/1.0")
+        if approved:
+            review_logger.info(f"✅ Plan 리뷰 통과")
+        else:
+            review_logger.warning(f"❌ Plan 리뷰 실패")
         
         comments = self._generate_comments(checks, "Plan")
         

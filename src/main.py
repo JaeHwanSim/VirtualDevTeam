@@ -13,6 +13,8 @@ from dotenv import load_dotenv
 from integrations.slack_bot import SlackBot
 from integrations.github_client import GitHubClient
 from integrations.gemini_client import GeminiClient
+from integrations.spec_kit_client import SpecKitClient
+from agents.goose_agent_executor import GooseAgentExecutor
 from models.issue import GitHubIssue
 from utils.file_manager import FileManager
 from workflow.review_agent import ReviewAgent
@@ -45,20 +47,24 @@ file_manager = FileManager()
 review_agent = ReviewAgent(auto_approve=False)
 print("✅ 기본 컴포넌트 초기화 완료")
 
-# Gemini Client 초기화 (선택)
-try:
-    gemini_client = GeminiClient()
-    if gemini_client.gemini_available:
-        print("✅ Gemini CLI 사용 가능")
-    else:
-        print("⚠️ Gemini CLI 미사용 (템플릿 모드)")
-        gemini_client = None
-except Exception as e:
-    print(f"⚠️ Gemini Client 초기화 실패: {e}")
-    gemini_client = None
+# Spec-kit Client 초기화
+spec_kit_client = SpecKitClient()
+print("✅ SpecKitClient 초기화 완료")
 
-# StageExecutor에 Gemini Client 전달
-stage_executor = StageExecutor(file_manager, review_agent, gemini_client)
+# Goose Agent Executor 초기화
+goose_executor = GooseAgentExecutor()
+if goose_executor.goose_available:
+    print("✅ GooseAgentExecutor 초기화 완료 (Goose CLI 사용 가능)")
+else:
+    print("⚠️ GooseAgentExecutor 초기화 완료 (Goose CLI 미사용)")
+
+# StageExecutor에 관련 클라이언트 전달
+stage_executor = StageExecutor(
+    file_manager=file_manager, 
+    review_agent=review_agent, 
+    spec_kit_client=spec_kit_client,
+    goose_executor=goose_executor
+)
 
 # Orchestrator는 SlackBot이 있으면 생성
 if bot:

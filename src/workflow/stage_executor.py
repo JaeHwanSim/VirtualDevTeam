@@ -13,16 +13,19 @@ from workflow.review_agent import ReviewAgent, ReviewResult
 class StageExecutor:
     """워크플로우 단계 실행기"""
     
-    def __init__(self, file_manager: FileManager, review_agent: ReviewAgent, gemini_client=None):
+    def __init__(self, file_manager: FileManager, review_agent: ReviewAgent, 
+                 spec_kit_client=None, goose_executor=None):
         """
         Args:
             file_manager: 파일 관리자
             review_agent: Review Agent
-            gemini_client: Gemini Client (선택)
+            spec_kit_client: Spec-kit Client (문서 생성용)
+            goose_executor: Goose Agent Executor (Agent 실행용)
         """
         self.file_manager = file_manager
         self.review_agent = review_agent
-        self.gemini_client = gemini_client
+        self.spec_kit_client = spec_kit_client
+        self.goose_executor = goose_executor
     
     def create_spec(self, issue: GitHubIssue) -> tuple[Optional[Path], Optional[ReviewResult]]:
         """
@@ -34,33 +37,73 @@ class StageExecutor:
         Returns:
             (spec 파일 경로, 리뷰 결과) 또는 (None, None)
         """
+        from utils.logger import workflow_logger
+        
         try:
+            workflow_logger.info(f"🎯 Spec 생성 시작 - Issue #{issue.number}: {issue.title}")
+            
             # Issue 디렉토리 생성
+            workflow_logger.debug("  디렉토리 생성 중...")
             issue_dir = self.file_manager.create_issue_directory(
                 issue.number, 
                 issue.title
             )
+            workflow_logger.info(f"  📁 디렉토리: {issue_dir}")
             
-            # Spec 내용 생성 (Gemini 우선, 템플릿은 fallback)
+            # Spec 내용 생성 (Spec-kit 사용)
             spec_content = None
-            if self.gemini_client:
-                print("🤖 Gemini CLI로 Spec 생성 중...")
-                spec_content = self.gemini_client.generate_spec(issue)
+            if self.spec_kit_client:
+                workflow_logger.info("  🤖 Spec-kit으로 Spec 생성 중...")
+                spec_content = self.spec_kit_client.generate_spec(issue)
+                if spec_content:
+                    workflow_logger.info("  ✅ Spec-kit으로 생성 완료")
+                else:
+                    workflow_logger.warning("  ⚠️ Spec-kit 생성 실패, 템플릿 사용")
+            
+            if not spec_content and self.goose_executor:
+                 # Fallback: Goose RA Agent (Spec 생성 모드일 경우)
+                 # 하지만 RA는 이제 Review 역할이므로 여기서는 생략하거나
+                 # 템플릿으로 넘어감
+                 pass
             
             if not spec_content:
-                print("📝 템플릿으로 Spec 생성 중...")
+                workflow_logger.info("  📝 템플릿 기반 Spec 생성...")
                 spec_content = self._generate_spec_content(issue)
+                workflow_logger.info("  ✅ 템플릿으로 생성 완료")
+            
+            workflow_logger.debug(f"  생성된 Spec 길이: {len(spec_content)} 글자")
             
             # Spec 파일 생성
+            workflow_logger.debug("  파일 저장 중...")
             spec_path = self.file_manager.create_spec_file(issue_dir, spec_content)
+            workflow_logger.info(f"  💾 Spec 파일: {spec_path}")
             
-            # Review Agent 리뷰
+            # Review Agent (Technical) 리뷰
+            workflow_logger.info("  🔍 Review Agent (Technical) 검토 시작...")
             review_result = self.review_agent.review_spec(spec_content, issue.title)
+            
+            # RA Agent (Regulatory) 리뷰 - Goose Executor 사용
+            if self.goose_executor:
+                workflow_logger.info("  ⚖️ RA Agent (Regulatory) 검토 시작...")
+                ra_result = self.goose_executor.execute_agent(
+                    agent_name="RA Agent",
+                    task="Spec 문서를 규제(FDA/ISO) 관점에서 검토하세요.",
+                    context={
+                        "document_type": "spec",
+                        "content": spec_content,
+                        "issue_title": issue.title
+                    },
+                    issue_number=issue.number
+                )
+                # RA 리뷰 결과 로그 (실제 반영은 추후)
+                workflow_logger.info(f"  RA Agent 결과: {ra_result.get('success')}")
+
+            workflow_logger.info(f"  {'✅' if review_result.approved else '❌'} 검토 완료: {review_result.status}")
             
             return spec_path, review_result
             
         except Exception as e:
-            print(f"Spec 생성 오류: {e}")
+            workflow_logger.error(f"  ❌ Spec 생성 오류: {e}", exc_info=True)
             return None, None
     
     def create_plan(self, issue_dir: Path, spec_path: Path) -> tuple[Optional[Path], Optional[ReviewResult]]:
@@ -80,12 +123,11 @@ class StageExecutor:
             if not spec_content:
                 return None, None
             
-            # Plan 내용 생성 (Gemini 우선, 템플릿은 fallback)
+            # Plan 내용 생성 (Spec-kit 사용)
             plan_content = None
-            if self.gemini_client:
-                print("🤖 Gemini CLI로 Plan 생성 중...")
-                issue_title = issue_dir.name.split('-', 1)[1] if '-' in issue_dir.name else "Feature"
-                plan_content = self.gemini_client.generate_plan(spec_content, issue_title)
+            if self.spec_kit_client:
+                print("🤖 Spec-kit으로 Plan 생성 중...")
+                plan_content = self.spec_kit_client.generate_plan(spec_content)
             
             if not plan_content:
                 print("📝 템플릿으로 Plan 생성 중...")
@@ -124,12 +166,12 @@ class StageExecutor:
             spec_path = issue_dir / "spec.md"
             spec_content = self.file_manager.read_file(spec_path) if spec_path.exists() else ""
             
-            # Tasks 내용 생성 (Gemini 우선, 템플릿은 fallback)
+            # Tasks 내용 생성 (Spec-kit 사용)
             tasks_content = None
-            if self.gemini_client:
-                print("🤖 Gemini CLI로 Tasks 생성 중...")
-                tasks_content = self.gemini_client.generate_tasks(plan_content, spec_content)
-            
+            if self.spec_kit_client:
+                print("🤖 Spec-kit으로 Tasks 생성 중...")
+                tasks_content = self.spec_kit_client.generate_tasks(plan_content)
+
             if not tasks_content:
                 print("📝 템플릿으로 Tasks 생성 중...")
                 tasks_content = self._generate_tasks_content(plan_content)
