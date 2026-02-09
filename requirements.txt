@@ -1,0 +1,6 @@
+fastapi==0.115.0
+uvicorn[standard]==0.32.0
+slack-sdk==3.33.3
+python-dotenv==1.0.1
+python-multipart==0.0.12
+PyGithub==2.4.0

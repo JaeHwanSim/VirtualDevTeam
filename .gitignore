@@ -1,0 +1,18 @@
+# Environment variables (보안 정보 포함)
+.env
+
+# Python
+src/integrations/__pycache__/
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyc
+*.pyo
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
